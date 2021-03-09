@@ -1,0 +1,826 @@
+---
+title: "ThermoFluor and DSF theory and fitting procedures using R"
+author: "Dr. Robert Opitz"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+header-includes: \usepackage{textcomp}
+documentclass: scrreprt
+classoption: a4paper
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+\newcommand{\DHm}{\Delta H_m}
+\newcommand{\DSm}{\Delta S_m}
+\newcommand{\Kdn}{K_\text{d,\,N}}
+\newcommand{\Kdu}{K_\text{d,\,U}}
+\newcommand{\Fu}{F_U}
+\newcommand{\Fn}{F_N}
+\newcommand{\dKdT}{\frac{d}{dT}K}
+\newcommand{\Kapp}{K_\text{app}}
+\newcommand{\Kint}{K_\text{intr}}
+
+# Theory
+
+## Melting of a single-domain Protein
+
+It is assumed that the protein exists only in the native and unfolded state.
+Intermediate states are only very short lived, and therefore not observed.
+
+\begin{equation}
+  N \rightleftharpoons U
+\end{equation}
+
+The according to the law of mass action, the equilibrium constant is then just:
+
+\begin{equation}
+  \label{eqn:basic_K}
+  K = \frac{[U]}{[N]}
+\end{equation}
+
+With $P = N + U$ is the total concentration of the protein.
+
+\begin{equation}
+  \label{eqn:DG}
+  \begin{split}
+  K & = \exp \left[-\frac{\Delta G_m}{R\,T}\right] \\
+    & = \exp \left[-\frac{(\Delta H_m - T\,\Delta S_m)}{R\,T}\right]
+  \end{split}
+\end{equation}
+
+The change in free energy gets $\Delta G_m = 0$ at the temperature $T = T_m$.
+This temperature is the *transition temperature* or loosing the *melting temperature*. Here the states *N* and *U* are equally populated, i.e. 50% of the protein exists in *N* and *U*, respectively.
+We can write $T_m$ then as:
+
+\begin{equation}
+  T_m = \frac{\Delta H_m}{\Delta S_m}
+\end{equation}
+
+With this we can rewrite \eqref{eqn:DG} to:
+
+\begin{align}
+  K & = \exp \left[\frac{\Delta S_m}{R}\,\left(1 - \frac{T_m}{T}\right)\right] \\
+    & = \exp \left[\frac{\Delta H_m}{R}\,\left(\frac{1}{T_m} - \frac{1}{T}\right)\right]
+\end{align}
+
+With this we can write a function to compute *K*. We could use $\Delta H_m$ or
+$\Delta S_m$, and the user can choose. The function below returns the proper
+function to compute *K* depending on $\DHm$ or $\DSm$.
+
+## The Thermofluor signal
+
+The measured signal $F$ consist of the two signals for the native and unfolded state:
+
+\begin{equation}
+  F = f_N + f_U
+\end{equation}
+
+With the assumption that $f_N$ and $f_U$ are directly proportional to the concentration
+of the ntaive and the unfolded state, we can write:
+
+\begin{equation}
+  F = \alpha\,N + \beta\,U
+\end{equation}
+
+Da die Gesamtkonzentration des Proteins $P = N + U$ während des Experiments konstant bleibt,
+könne wir bpsw. die Konzentration des entfalteten Proteins ersetzen:
+
+\begin{align}
+  F & = \alpha\,N + \beta\,(P - N) \\
+    & = (\alpha - \beta)\,N + \beta\,P
+\end{align}
+
+This equation tells us that we will only have a measurable thermofluor signal,
+if $\alpha$ and $\beta$ are different, i.e. the spectroscopic properties of the native and the unfolded state needs to be different.
+
+We are interested for the equilibrium state, so we replace the concentrations with the equilibrium concentrations.
+With \eqref{eqn:basic_K} and $P = N + U$ we can write the equilibrium concentration of the native state as:
+
+\begin{equation}
+  [N] = \frac{P}{1 + K}
+\end{equation}
+
+The measured signal will be than:
+
+\begin{align}
+  F & = (\alpha - \beta)\,[N] + \beta\,P \\
+    & = (\alpha - \beta)\,\frac{P}{1 + K} + \beta\,P \\
+    & = \frac{\alpha\,P + \beta\,P\,K}{1 + K}
+\end{align}
+
+The values for $\alpha$, $\beta$, and the total concentration of the protein $P$ are not available, and also
+not so much of interest. We set $F_N = \alpha\,P$ and $F_U = \beta\,P$, i.e. the signal of the fully native, and fully unfolded protein. With that we obtain the final equation:
+
+\begin{equation}
+  F = \frac{F_N + F_U\,K}{1 + K}
+\end{equation}
+
+The signals $F_N$, $F_U$ might be temperature depended, the equilibrium constant $K$ is it definitely.
+
+The equilibrium constant $K$ is in the range of $0 \leq K < \infty$. For both extreme of the interval, the
+measured signal will be:
+
+\begin{align}
+  K = 0: & \quad F = F_N \\
+  K \rightarrow \infty: & \quad F = F_U
+\end{align}
+
+Different Background signals for $F_N$ and $F_U$
+
+* constant (CD melting curves)
+* linear (intrinsic fluorophors)
+  + $F_N = F_{N,\,0\textcelsius} + T_C\,m = F_{N,\,0\textcelsius} + (T_K - T_{K,\,0\textcelsius})\,m$
+* non-linear (extrinsic fluorophors)
+
+### Thermofluor with extrinsic Fluorophors
+
+Before we assumed that the signal is created directly by the protein itself, either by using CD spectroscopy, or intrinsic fluorophors, namely tryptophane. Now, we use extrinsic fluorophors that bind to the protein and show different signals for the native and the unfolded state.
+
+We can describe the whole process as:
+
+\begin{equation}
+        NL_n \rightleftharpoons n\,L + N \rightleftharpoons
+	    U + m\,L \rightleftharpoons UL_m
+\end{equation}
+
+We have the following equilibrium constants:
+
+\begin{equation}
+  \begin{split}
+	   \Kdn & = \frac{[N]\,[L]^n}{[NL_n]} \\
+	   \Kdu & = \frac{[U]\,[L]^m}{[UL_m]} \\
+	      K & = \frac{[U]}{[N]} \\
+  \end{split}
+\end{equation}
+
+The total concentration of the protein is $P = N + U + NL_n + UL_m$. The measured fluorescence i:
+
+\begin{equation}
+  F = f_{NL_n} + f_{UL_m}
+\end{equation}
+
+We use the linear assumption between concentration and measured signal as before.
+
+\begin{equation}
+  F = \alpha\,NL_n + \beta\,UL_m
+\end{equation}
+
+\begin{align}
+  F & = \alpha\,[NL_n] + \beta\,[UL_m] \\
+    & = \alpha\,\frac{[N]\,[L]}{\Kdn} + \beta\,\frac{[U]\,[L]}{\Kdu} \\
+    & = \alpha\,\frac{[N]\,[L]}{\Kdn} + K\,\beta\,\frac{[N]\,[L]}{\Kdu} \\
+    & = [N]\,\left(\alpha\,\frac{[L]}{\Kdn} + K\,\beta\,\frac{[L]}{\Kdu}\right)
+\end{align}
+
+\begin{align}
+  P & = N + U + NL + UL \\
+    & = [N] + [U] + [NL] + [UL] \\
+    & = [N] + [U] + \frac{[N]\,[L]}{\Kdn} + \frac{[U]\,[L]}{\Kdu} \\
+    & = [N] + K\,[N] + \frac{[N]\,[L]}{\Kdn} + K\,\frac{[N]\,[L]}{\Kdu} \\
+    & = [N]\,\left(1 + K + \frac{[L]}{\Kdn} + K\,\frac{[L]}{\Kdu}\right)
+\end{align}
+
+\begin{equation}
+  [N] = \frac{P}{\left(1 + \frac{[L]^n}{\Kdn}\right) + K\,\left(1 + \frac{[L]^m}{\Kdu}\right)} 
+\end{equation}
+
+So finally bringing everything together, the observed fluorescence signal is:
+
+\begin{align}
+  F & = \frac{\alpha\,P\,\frac{[L]^n}{\Kdn} + K\,\beta\,P\,\frac{[L]^m}{\Kdu}}{\left(1 + \frac{[L]^n}{\Kdn}\right) + K\,\left(1 + \frac{[L]^m}{\Kdu}\right)} \\
+    & = \frac{\alpha\,[PL_n] + K\,\beta\,[PL_m]}{\left(1 + \frac{[PL_n]}{P}\right) + K\,\left(1 + \frac{[PL_m]}{P}\right)}
+\end{align}
+
+If the concentration of the ligand $L$ is larger than the protein, the ratio $\frac{[PL_n]}{P}$ is between zero and one.
+
+If we do the mistake and using the equation for the Thermofluor as before, then the measure for $K$ is biased:
+
+\begin{equation}
+  F = \frac{\alpha\,[PL_n] + K\,\beta\,[PL_m]}{1 + \left(\frac{[PL_n]}{P} + K\,\left(1 + \frac{[PL_m]}{P}\right)\right)}
+\end{equation}
+
+The equilibrium constant $K$ is in the range of $0 \leq K < \infty$. For both extreme of the interval, the
+measured signal will be:
+
+\begin{align}
+  K = 0: & \quad F = F_N =  \frac{\alpha\,P\,[PL_n]}{P + [PL_n]} = \frac{\alpha\,P\,[L]^n}{[L]^n + \Kdn} \\
+  \lim_{K \to \infty} F & = F_U = \frac{\beta\,P\,[PL_m]}{P + [PL_m]} = \frac{\beta\,P\,[L]^m}{[L]^m + \Kdu}
+\end{align}
+
+These parameter all temperature depended $\alpha, \beta, [PL_n], [PL_m], \Kdn$, and $\Kdu$.
+
+```{r, echo = FALSE}
+PL <- seq(0, 5, 0.1)
+plot(x = PL,
+     y = PL / (1 + PL),
+     xlab = "[PLn]",
+     ylab = "F",
+     ylim = c(0,1),
+     type = "l",
+     col = "red")
+abline(h = 1, lty = 2)
+abline(a = 0, b = 1, lty = 3)
+
+Kd <- seq(0,50,0.5)
+plot(x = Kd,
+     y = 1 / (1 + Kd),
+     xlab = "Kd",
+     ylab = "F",
+     ylim = c(0,1),
+     type = "l",
+     col = "red")
+```
+
+
+## The DSF signal
+
+For a single-domain protein the DSF signal is the first derivative of *F* in \eqref{eqn:thermofluor} to *T*. Take in mind that *K*, $\Fn$, and $\Fu$ are all
+temperature dependent.
+
+\begin{equation}
+  \label{eqn:dsf_signal}
+  \frac{dF}{dT} = \overbrace{\frac{\frac{d}{dT}K}{(1+K)^2}}^{= \text{DSF signal}}\,\underbrace{\left(F_U - F_N \right)}_{= \Delta F} + \overbrace{\frac{ \left( \frac{d}{dT}\,F_N + K\,\frac{d}{dT}\,F_U \right) }{ 1 + K }}^{= \text{Background signal}}
+\end{equation}
+
+The *background* signal looks similar to the signal to the *thermofluor* signal \eqref{eqn:thermofluor}.
+If the signals for the native and the unfolded are independent of temperature, than the *background* signal is just zero.
+We can only measure a signal, when there is a difference in the signals for the native and unfolded state, otherwise
+$\Delta F = 0$.
+
+\begin{equation}
+  \begin{split}
+    \frac{d\,K}{dT} & = \frac{\Delta S_m\,T_m}{R\,T^2}\,\exp \left[\frac{\Delta S_m}{R}\,\left(1 - \frac{T_m}{T}\right)\right] \\
+    & = \frac{\Delta H_m}{R\,T^2}\,\exp \left[\frac{\Delta H_m}{R\,T_m}\,\left(1 - \frac{T_m}{T}\right)\right]
+  \end{split}
+\end{equation}
+
+## Melting of a multi-domain protein
+
+We assume the simple situation in that the different domains of the proteins
+melt independently. This is the same situation as if we had several single-domain
+proteins in our solution.
+
+For the investigation it is necessary that the melting characteristics of the 
+domains are different enough, otherwise the melting curve will appear as the curve
+for a single-domain protein.
+
+## Melting  in the ThermoFluor context
+
+In the ThermoFluor context we do not investigate the states *N* and *U* of
+the protein directly, as in DSC or CD- or intrinsic fluroesence melting curves.
+Here, an extrinsic flurorophor is used that binds to the protein, but differently
+strong to the states *N* and *U*. Only then can we differentiate in our measurement
+both states.
+
+The model for this process is:
+
+\begin{equation}
+        NF_n \rightleftharpoons n\,F + N \rightleftharpoons
+	    U + m\,F \rightleftharpoons UF_m
+\end{equation}
+
+Then the equilibrium constant from equation \eqref{eqn:basic_K} becomes
+the apparent *K*:
+
+\begin{equation}
+  \Kapp = \frac{[U] + [UF_m]}{[N] + [NF_n]}
+\end{equation}
+
+Everything that binds to the native state *N* is called a *Kosmotropic Agent*, 
+as it stabilizes the native state, i.e. deacreses *K*. 
+Everything that binds to the unfolded state is called a *Chaotropic Agent*, 
+as it it destabilizes the protein, i.e. increses *K*. As the extrinsic 
+fluorophore will probably bind more to the unfolded state, it will tend to be more
+chaotropic. It is assumed that this effect is negligible, as $\Kdu$ will be
+weak, and the concentration of fluorophore and protein will be low.
+
+We can build the apparent equilibrium constants $\Kapp$ with the equilibrium constants of the sub-processes:
+
+\begin{equation}
+  \begin{split}
+	   \Kdn & = \frac{[N]\,[F]^n}{[NF_n]} \\
+    \Kint & = \frac{[U]}{[N]} \\
+	   \Kdu & = \frac{[U]\,[F]^m}{[UF_m]}
+  \end{split}
+\end{equation}
+
+<!-- The total concentration of the protein *P* is constant: -->
+
+<!-- \begin{equation} -->
+<!--   P = [U] + [N] + [NF_n] + [UF_m] -->
+<!-- \end{equation} -->
+
+\begin{equation}
+  \Kapp = \Kint\,\frac{\Kdn}{\Kdu}\,\left(\frac{\Kdu+[F]^m}{\Kdn+[F]^n}\right)
+\end{equation}
+
+The apparente $\Kapp$ becomes similar to $\Kint$, if the binding constants $\Kdu$
+and $\Kdn$ become similar **and** if the free amount of the unbound fluorophore
+becomes close to zero, or $m \approx n$. It is to assume that the amount of bound fluorophor
+is higher for the unfolded than for the native state, i.e. $m > n$. Also,
+$\Kapp$ becomes similar to $\Kint$, if both bindings constants $\Kdu$ and 
+$\Kdn$ are much larger than the amount of free fluorophor.
+
+But in ThermoFluor we actually just measure $[NF_n]$ and $[UF_m]$, as $[N]$ and
+$[U]$ are invisible. So the actually measured equilibirium constant looks
+more like this:
+
+\begin{equation}
+  K_\text{app} = \frac{[UF_m]}{[NF_n]}
+\end{equation}
+
+With the bindings constants this $\Kapp$ becomes:
+
+\begin{equation}
+  K_\text{app} = K_\text{intr}\,[F]^{n-m}\,\frac{\Kdu}{\Kdn}
+\end{equation}
+
+
+## Thermofluor Signal for a single-domain protein
+
+Without background signal, an assuming the fluorescen of each species is 
+proportional to its concentration, the measured fluorescence is
+
+\begin{equation}
+  \begin{split}
+    F & = \alpha\,[NF_n] + \beta\,[UF_m] \\
+      & = \alpha\,\frac{[N]\,[F]^n}{\Kdn} + \beta\,\frac{[U]\,[F]^m}{\Kdu}
+  \end{split}
+\end{equation}
+
+\begin{equation}
+  \label{eqn:thermofluor}
+  F = \frac{\Fn + \Fu\,K}{1 + K}
+\end{equation}
+
+For $K = 0$ ($[U] = 0$), $F = F_N$. For $K \rightarrow \infty$ ($[N] \rightarrow 0$),
+$F = F_U$.
+
+## Thermofluor Signal for a multi-domain protein
+
+\begin{equation}
+  F = \sum_i \frac{F_{N,\,i} + F_{U,\,i}\,K_i}{1 + K_i}
+\end{equation}
+
+```{r function_to_compute_K}
+# for Thermofluor signal
+get_K_function <- function(value = "DSm") { # preset value is for DSm
+  # constants
+  C_to_K <- 273.15 # 0°C in Kelvin
+  gas_constant <- 8.3144598 # J/(mol*K)
+  # choose between the function for DSm or DHm
+  if (identical(value, "DSm"))
+    function(Tm, # transition temperature in °C 
+             DSm, # change in melting entropy in J/(mol*K)
+             temperature) # temperature in °C
+    { #compute K
+      A <- DSm/gas_constant
+      B <- (Tm + C_to_K)/(temperature + C_to_K)
+      exp(A * (1.0 - B))
+    }
+  else if (identical(value, "DHm"))
+    function(Tm, # transition temperature in °C 
+             DHm, # change in melting enthalpy in J/(mol*K)
+             temperature) # temperature in °C
+    { #compute K
+      A <- DHm/gas_constant
+      B <- 1.0/(Tm + C_to_K)
+      C <- 1.0/(temperature + C_to_K)
+      exp(A * (B - C))
+    }
+  else
+    stop(paste("The value: ", value, " is not know. Use DSm or DHm."))
+}
+```
+
+Here we choose to use $\DSm$.
+
+```{r get_the_K_function}
+compute_K <- get_K_function("DSm")
+```
+
+```{r get_used_to_compute_K}
+compute_K(Tm = 50, DSm = 1000, temperature = 50)
+compute_K(Tm = 50, DSm = 1000, temperature = c(40,50,60))
+```
+
+```{r thermo_fluor_signal}
+# thermo fluor signal for single and multi domain proteins
+get_Thermo_Fluor_signal <- function(temperature, Tm, DSm, 
+                                    Fn_coef, Fu_coef,
+                                    sd_noise = 0) {
+  signal <- rep(0.0, length(temperature))
+  for (i in seq_along(Tm)) {
+    # linear Background for native and unfolded protein
+    Fn <- Fn_coef[[i]]$a + temperature * Fn_coef[[i]]$b
+    Fu <- Fu_coef[[i]]$a + temperature * Fu_coef[[i]]$b
+    # get K = [U]/[N]
+    K <- compute_K(Tm[i], DSm[i], temperature)
+    # get the signal
+    signal <- signal + (Fn + Fu * K) / (1.0 + K)
+  }
+  signal + rnorm(length(signal), sd = sd_noise)
+}
+```
+
+The first plot shows the melting curve of a single-domain protein.
+
+```{r plot_single-domain_protein}
+Tm <- 50 # in °C
+DSm <- 1000.0 # in J/(mol*K)
+temperature <- seq(0, 100, 0.5) # temperature range of melting in °C
+# linear Background for native and unfolded protein
+Fn <- list(list(a = 500, b = -1))
+Fu <- list(list(a = 2000, b = -10))
+
+plot(x = temperature,
+     y = get_Thermo_Fluor_signal(temperature, Tm, DSm, Fn, Fu),
+     type = "l",
+     col = "blue",
+     xlab = "temperature [°C]",
+     ylab = "F [a.u.]")
+
+# plot linear background for native protein
+abline(a = Fn[[1]]$a, b = Fn[[1]]$b, lty = 2)
+# plot linear background for unfolded protein
+abline(a = Fu[[1]]$a, b = Fu[[1]]$b, lty = 2)
+# plot where the transition temperature is
+abline(v = Tm, lty = 3)
+```
+
+```{r plot_multi-domain_protein}
+Tm <- c(40, 70) # in °C
+DSm <- c(1000, 1000.0) # in J/(mol*K)
+temperature <- seq(0, 100, 0.5) # temperature range of melting in °C
+# linear Background for native and unfolded protein
+Fn <- list(list(a = 250, b = -1),
+           list(a = 250, b = -1))
+Fu <- list(list(a = 2000, b = -10),
+           list(a = 2000, b = -5))
+
+plot(x = temperature,
+     y = get_Thermo_Fluor_signal(temperature, Tm, DSm, Fn, Fu),
+     type = "l",
+     col = "blue",
+     xlab = "temperature [°C]",
+     ylab = "F [a.u.]")
+
+# plot linear background for native protein
+abline(a = Fn[[1]]$a + Fn[[2]]$a, 
+       b = Fn[[1]]$b + Fn[[2]]$b, 
+       lty = 2)
+# plot linear background for intermediate melted protein
+abline(a = Fu[[1]]$a + Fn[[2]]$a,
+       b = Fu[[1]]$b + Fn[[2]]$b,
+       lty = 2)
+# plot linear background for unfolded protein
+abline(a = Fu[[1]]$a + Fu[[2]]$a, 
+       b = Fu[[1]]$b + Fu[[2]]$b, 
+       lty = 2)
+# plot where the transition temperature is
+abline(v = Tm, lty = 3)
+```
+
+## DSF Signal for a single-domain protein
+
+For a single-domain protein the DSF signal is the first derivative of *F* in \eqref{eqn:thermofluor} to *T*. Take in mind that *K*, $\Fn$, and $\Fu$ are all
+temperature dependent.
+
+\begin{equation}
+  \label{eqn:dsf_signal}
+  \frac{dF}{dT} = \overbrace{\frac{\frac{d}{dT}K}{(1+K)^2}}^{= \text{DSF signal}}\,\underbrace{\left( \Fu - \Fn \right)}_{= \Delta F} + \overbrace{\frac{ \left( K\,\frac{d}{dT}\,\Fu + \frac{d}{dT}\,\Fn \right) }{ 1 + K }}^{= \text{Background signal}}
+\end{equation}
+
+The *background* signal looks similar to the signal to the *thermofluor* signal \eqref{eqn:thermofluor}.
+If the signals for the native and the unfolded are independent of temperature, than the *background* signal is just zero.
+We can only measure a signal, when there is a difference in the signals for the native and unfolded state, otherwise
+$\Delta F = 0$.
+
+\begin{equation}
+  \frac{d\,K}{dT} =
+\end{equation}
+
+\begin{equation}
+  \frac{dF}{dT} = \sum_i \left(\frac{\frac{d}{dT}K_i}{(1+K_i)^2}\,\left(F_{U,\,i} - F_{N,\,i}\right) + 
+          \frac{\left(K_i\,\frac{d}{dT}\,F_{U,\,i} + \frac{d}{dT}\,F_{N,\,i}\right) }{1+K_i}\right)
+\end{equation}
+
+```{r computation_K_DSF}
+compute_K_and_dKdT <- function(Tm, DSm, temperature) {
+  # constants
+  C_to_K <- 273.15 # 0°C in Kelvin
+  gas_constant <- 8.3144598 # J/(mol*K)
+  # convert temperatures from °C to Kelvin
+  Tm <- Tm + C_to_K
+  temp_Kelvin <- temperature + C_to_K
+  # compute K
+  A <- DSm/gas_constant
+  B <- Tm/temp_Kelvin
+  K <- exp(A * (1.0 - B))
+  list(K    = K,
+       dKdT = K * A * (Tm/temp_Kelvin^2))
+}
+```
+
+```{r compute_DSF}
+get_DSF_signal <- function(temperature, Tm, DSm, 
+                          Fn_coef, Fu_coef,
+                          sd_noise = 0) {
+  signal <- rep(0.0, length(temperature))
+  background_sum <- rep(0.0, length(temperature))
+  for (i in seq_along(Tm)) {
+    # compute Signal
+    result <- compute_K_and_dKdT(Tm[i], DSm[i], temperature)
+    # compute background
+    Fn <- Fn_coef[[i]]$a + Fn_coef[[i]]$b * temperature
+    Fu <- Fu_coef[[i]]$a + Fu_coef[[i]]$b * temperature
+    # compute the terms
+    dsf_signal <- result$dKdT / (1 + result$K)^2
+    DF <- Fu - Fn
+    background <- (result$K * Fu_coef[[i]]$b + Fn_coef[[i]]$b) / (1 + result$K)
+    # put everything together
+    signal <- signal + (dsf_signal * DF + background)
+    background_sum <- background_sum + background
+  }
+  # return everything
+  list(dsf_signal = signal + rnorm(length(signal), sd = sd_noise), 
+       background = background_sum)
+} 
+```
+
+```{r plot_dsf_single-domain-protein}
+Tm <- 50 # in °C
+DSm <- 1000.0 # in J/(mol*K)
+temperature <- seq(0, 100, 0.5) # temperature range of melting in °C
+# linear Background for native and unfolded protein
+Fn <- list(list(a = 500, b = -1))
+Fu <- list(list(a = 2000, b = -10))
+
+result <- get_DSF_signal(temperature, Tm, DSm, Fn, Fu)
+plot(x = temperature,
+     y = result$dsf_signal,
+     type = "l",
+     col = "blue",
+     xlab = "temperature [°C]",
+     ylab = paste("dF/dT [a.u.]"))
+# plot background
+lines(x = temperature,
+       y = result$background,
+       lty = 2)
+# plot melting tmeperature
+abline(v = Tm, lty = 3)
+```
+
+```{r plot_dsf_multi-domain_protein}
+Tm <- c(40, 50) # in °C
+DSm <- c(1000, 1000.0) # in J/(mol*K)
+temperature <- seq(0, 100, 0.5) # temperature range of melting in °C
+# linear Background for native and unfolded protein
+Fn <- list(list(a = 250, b = -1),
+           list(a = 250, b = -1))
+Fu <- list(list(a = 2000, b = -10),
+           list(a = 2000, b = -5))
+
+result <- get_DSF_signal(temperature, Tm, DSm, Fn, Fu)
+plot(x = temperature,
+     y = result$dsf_signal,
+     type = "l",
+     col = "blue",
+     xlab = "temperature [°C]",
+     ylab = paste("dF/dT [a.u.]"))
+# plot background
+lines(x = temperature,
+       y = result$background,
+       lty = 2)
+# plot melting tmeperature
+abline(v = Tm, lty = 3)
+```
+
+\newpage
+# Fitting
+
+## ThermoFluor signal
+
+For fitting we exploit the *conditionally linearity* of the fitting equations.
+We show the principle for the ThermoFluor signal first for a single domain protein.
+The equation is with \eqref{eqn:thermofluor}:
+
+\begin{equation}
+  F = \frac{F_N + F_U\,K}{1+K}
+\end{equation}
+
+With the assumption of a linear Background we can rewrite this to:
+
+\begin{equation}
+  F = a_N\,\frac{1}{1+K} + b_N\,\frac{T_C}{1+K} + a_U\,\frac{K}{1+K} + b_U\,\frac{T_C\,K}{1+K}
+\end{equation}
+
+It looks more complictaed, but the parameter for the background $a_N$, $b_N$, 
+$a_U$, and $b_U$ present now a linear regression problem, while the parameter 
+$T_m$ and $\DSm$ are a non-linear regression problem.
+
+```{r fit_thermofluor_signal}
+fit_thermofluor_signal <- function(temperature, 
+                                   signal,
+                                   nb_domains = 1) {
+  
+  # initial guess
+  Tm_init <- c(0,100,50)
+  Tm_init <- Tm_init[1:nb_domains]
+  #Tm_init  <- rep(0.0, nb_domains) # melting temperature in in °C
+  DSm_init <- rep(100.0, nb_domains) # unfolding change in entropy in J/(mol *K)
+  
+  # function for constrained conditionally linear regression
+  model_function <- function(input, get_fit_object = FALSE) {
+    cat(input, "\n")
+    n <- length(input) / 2
+    for (i in seq(n)) {
+      # retrieve Tm and DSm from input
+      Tm <- input[i]
+      DSm  <- input[i + n]
+      # get K
+      K <- compute_K(Tm, DSm, temperature)
+      # get the terms for the linear regression
+      an <- 1.0 / (1.0 + K)
+      bn <- temperature * an
+      au <- K * an
+      bu <- temperature * au
+      # get everything into a data frame
+      tmp_df <- cbind(an, bn, au, bu)
+      if (i == 1)
+        df <- tmp_df
+      else {
+        df[,3] <- df[,3] + tmp_df[,1] - 1
+        df[,4] <- df[,4] + tmp_df[,2] - 1
+        df <- cbind(df, tmp_df[,3:4])
+      }
+    }
+    
+    if (nb_domains == 1)
+      colnames(df) <- c("an", "bn", "au", "bu")
+    else
+      colnames(df) <- c("an", "bn", "ai", "bi", "au", "bu")
+
+    # linear regression
+    fit <- lm.fit(x = df, y = signal)
+    
+    if (get_fit_object)
+      # get final fit
+      fit
+    else
+      # get RSS
+      mean(fit$residuals^2)
+  }
+  
+  fit_model <- optim(par = c(Tm_init, DSm_init), 
+                     fn = model_function, 
+                     method = "L-BFGS-B",
+                     lower = rep(0.0, 2*length(Tm_init)),
+                     upper = c(rep(100.0, length(Tm_init)), 
+                               rep(10000.0, length(DSm_init))) )
+  
+  final_fit <- model_function(fit_model$par, TRUE)
+  print(final_fit$coefficients)
+  
+  list(par  = fit_model, 
+       pred = final_fit)
+}
+```
+
+```{r fit_single-domain-protein}
+temperature <- seq(0, 100, 0.5)
+Tm <- 45.5
+DSm <- 700
+Fn <- list(list(a = 250, b = -5))
+Fu <- list(list(a = 2000, b = -20))
+
+signal <- get_Thermo_Fluor_signal(temperature, Tm, DSm, Fn, Fu, sd_noise = 20)
+fit <- fit_thermofluor_signal(temperature, signal)
+
+plot(x = temperature,
+     y = signal,
+     type = "l",
+     col = "blue",
+     xlab = "temperature [°C]",
+     ylab = "F [a.u.]")
+
+print(round(fit$par$par,1))
+lines(temperature, fit$pred$fitted.values, col = "red")
+abline(a = fit$pred$coefficients["an"], 
+       b = fit$pred$coefficients["bn"], lty = 2)
+abline(a = fit$pred$coefficients["au"], 
+       b = fit$pred$coefficients["bu"], lty = 2)
+abline(v = Tm, lty = 3)
+```
+
+```{r fit_multiple-domain-protein}
+# temperature range of melting in °C
+temperature <- seq(0, 100, 0.5)
+Tm <- c(50, 70) # in °C
+DSm <- c(1000, 4000.0) # in J/(mol*K)
+
+# linear Background for native and unfolded protein
+Fn <- list(list(a = 250, b = -1),
+           list(a = 250, b = -1))
+Fu <- list(list(a = 2000, b = -10),
+           list(a = 2000, b = -5))
+
+signal <- get_Thermo_Fluor_signal(temperature, Tm, DSm, Fn, Fu, sd_noise = 20)
+fit <- fit_thermofluor_signal(temperature, signal, nb_domains = 2)
+
+plot(x = temperature,
+     y = signal,
+     type = "l",
+     col = "blue",
+     xlab = "temperature [°C]",
+     ylab = "F [a.u.]")
+
+print(round(fit$par$par,1))
+lines(temperature, fit$pred$fitted.values, col = "red")
+abline(a = fit$pred$coefficients["an"], 
+       b = fit$pred$coefficients["bn"], lty = 2)
+abline(a = fit$pred$coefficients["ai"], 
+       b = fit$pred$coefficients["bi"], lty = 3)
+abline(a = fit$pred$coefficients["au"], 
+       b = fit$pred$coefficients["bu"], lty = 4)
+abline(v = Tm, lty = 3)
+```
+
+
+
+## DSF signal
+
+With a linear background for $\Fn$ and $\Fu$, and $\Delta a_{un} = a_u - a_n$ this becomes:
+
+\begin{equation}
+  \frac{dF}{dT} = \Delta a_{un}\left(\frac{K\,\dKdT}{(1+K)^2}\right) + b_u\,\left( \frac{K\,(1+T\,\dKdT+K)}{(1+K)^2} \right) + b_n\,\left(   \frac{1+K\,(1-T\,\dKdT)}{(1+K)^2} \right)
+\end{equation}
+
+\begin{equation}
+  \frac{dF}{dT} = \Delta a_{un}\overbrace{\left(\frac{K\,\dKdT}{(1+K)^2}\right)}^{= S} 
+  + b_u\,\left(\frac{K}{1+K} + T\,\overbrace{\frac{K\,\dKdT}{(1+K)^2}}^{= S}\right) 
+  + b_n\,\left(   \frac{1+K\,(1-T\,\dKdT)}{(1+K)^2} \right)
+\end{equation}
+
+The background signal, 
+
+\begin{equation}
+  \text{Background} = \frac{ \left( K\,b_u + b_n \right) }{ 1 + K } = b_u\,\frac{K}{1+K} + b_n\,\frac{1}{ 1 + K }
+\end{equation}
+
+```{r fit_dsf_signal}
+fit_dsf_signal <- function(temperature, signal) {
+  # initial guess
+  Tm_init  <-  50.0 # melting temperature in in °C
+  DSm_init <- 250.0 # unfolding change in entropy in J/(mol *K)
+  # function for constrained conditionally linear regression
+  model_function <- function(input, get_fit_object = FALSE) {
+    df <- NULL
+    for (i in seq(length(input/2))) {
+      # retrieve Tm and DSm from input
+      Tm <- input[1]
+      DSm  <- input[2]
+      # get K and dK/dT
+      K <- compute_K_and_dKdT(Tm, DSm, temperature)
+      # get the terms for the linear regression
+      term1 <- 1.0 / (1.0 + K)
+      term2 <- temperature * term1
+      term3 <- K * term1
+      term4 <- temperature * term3
+      # get everything into a data frame
+      tmp_df <- data.frame(term1,
+                           term2,
+                           term3, term4)
+      colnames(tmp_df) <- paste0(c("an", "bn", "au", "bu"), i)
+      df <- cbind(df, tmp_df)
+    }
+    # linear fit
+    fit <- lm.fit(x = df, 
+                  y = signal)
+    
+    if (get_fit_object)
+      # get final fit
+      fit
+    else
+      # get RSS
+      mean(fit$residuals^2)
+  }
+  
+  fit_model <- optim(par = c(Tm_init, DSm_init), 
+                     fn = model_function, 
+                     method = "L-BFGS-B",
+                     lower = c(0.0, 0.0),
+                     upper = c(100.0, 10000.0))
+  
+  final_fit <- model_function(fit_model$par, TRUE)
+  print(final_fit$coefficients)
+  
+  list(par  = fit_model, 
+       pred = final_fit$fitted.values)
+}
+```
